@@ -6,7 +6,7 @@
 // project started 5/3/2018
 // bitbank@pobox.com
 //
-// This is experimental code is meant to push the SSD1306 OLED controller to the limits by bit-banging the I2C
+// This experimental code is meant to push the SSD1306 OLED controller to the limits by bit-banging the I2C
 // protocol. The code is designed for speed only and does not conform to the I2C spec. This
 // may not work on all devices which use the SSD1306 / SSD1106.
 //
