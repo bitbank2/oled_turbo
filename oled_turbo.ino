@@ -30,7 +30,7 @@
 //
 // Comment out this line to gain 1K of RAM and not use a backing buffer
 //
-//#define USE_BACKBUFFER
+#define USE_BACKBUFFER
 
 // small (8x8) font
 const byte ucFont[]PROGMEM = {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x7e,0x81,0x95,0xb1,0xb1,0x95,0x81,0x7e,
@@ -680,9 +680,8 @@ static void oledWriteCommand(unsigned char c);
 #define I2CDDR DDRD
 
 // Pin or port numbers for SDA and SCL
-#define BB_SDA 1
-#define BB_SCL 0
-#define BB_SHIFT (7-BB_SDA)
+#define BB_SDA 2
+#define BB_SCL 3
 
 //
 // Transmit a byte and ack bit
@@ -1111,6 +1110,133 @@ unsigned char temp[16];
 #endif
 } /* oledFill() */
 
+void oledDrawLine(int x1, int y1, int x2, int y2)
+{
+  int temp, i;
+  int dx = x2 - x1;
+  int dy = y2 - y1;
+  int error;
+  byte *p, *pStart, mask, bOld, bNew;
+  int xinc, yinc;
+  int y, x;
+  
+  if (x1 < 0 || x2 < 0 || y1 < 0 || y2 < 0 || x1 > 127 || x2 > 127 || y1 > 63 || y2 > 63)
+     return;
+
+  if(abs(dx) > abs(dy)) {
+    // X major case
+    if(x2 < x1) {
+      dx = -dx;
+      temp = x1;
+      x1 = x2;
+      x2 = temp;
+      temp = y1;
+      y1 = y2;
+      y2 = temp;
+    }
+
+    y = y1;
+    dy = (y2 - y1);
+    error = dx >> 1;
+    yinc = 1;
+    if (dy < 0)
+    {
+      dy = -dy;
+      yinc = -1;
+    }
+    p = pStart = &ucScreen[x1 + ((y >> 3) << 7)]; // point to current spot in back buffer
+    mask = 1 << (y & 7); // current bit offset
+    for(x=x1; x1 <= x2; x1++) {
+      *p++ |= mask; // set pixel and increment x pointer
+      error -= dy;
+      if (error < 0)
+      {
+        error += dx;
+        if (yinc > 0)
+           mask <<= 1;
+        else
+           mask >>= 1;
+        if (mask == 0) // we've moved outside the current row, write the data we changed
+        {
+           oledSetPosition(x, y>>3);
+           oledWriteDataBlock(pStart,  (int)(p-pStart)); // write the row we changed
+           x = x1+1; // we've already written the byte at x1
+           y1 = y+yinc;
+           p += (yinc > 0) ? 128 : -128;
+           pStart = p;
+           mask = 1 << (y1 & 7);
+        }
+        y += yinc;
+      }
+    } // for x1    
+   if (p != pStart) // some data needs to be written
+   {
+     oledSetPosition(x, y>>3);
+     oledWriteDataBlock(pStart, (int)(p-pStart));
+   }
+  }
+  else {
+    // Y major case
+    if(y1 > y2) {
+      dy = -dy;
+      temp = x1;
+      x1 = x2;
+      x2 = temp;
+      temp = y1;
+      y1 = y2;
+      y2 = temp;
+    } 
+
+    p = &ucScreen[x1 + ((y1 >> 3) * 128)]; // point to current spot in back buffer
+    bOld = bNew = p[0]; // current data at that address
+    mask = 1 << (y1 & 7); // current bit offset
+    dx = (x2 - x1);
+    error = dy >> 1;
+    xinc = 1;
+    if (dx < 0)
+    {
+      dx = -dx;
+      xinc = -1;
+    }
+    for(x = x1; y1 <= y2; y1++) {
+      bNew |= mask; // set the pixel
+      error -= dx;
+      mask <<= 1; // y1++
+      if (mask == 0) // we're done with this byte, write it if necessary
+      {
+        if (bOld != bNew)
+        {
+          p[0] = bNew; // save to RAM
+          oledSetPosition(x, y1>>3);
+          oledWriteDataBlock(&bNew, 1);
+        }
+        p += 128; // next line
+        bOld = bNew = p[0];
+        mask = 1; // start at LSB again
+      }
+      if (error < 0)
+      {
+        error += dy;
+        if (bOld != bNew) // write the last byte we modified if it changed
+        {
+          p[0] = bNew; // save to RAM
+          oledSetPosition(x, y1>>3);
+          oledWriteDataBlock(&bNew, 1);         
+        }
+        p += xinc;
+        x += xinc;
+        bOld = bNew = p[0];
+      }
+    } // for y
+    if (bOld != bNew) // write the last byte we modified if it changed
+    {
+      p[0] = bNew; // save to RAM
+      oledSetPosition(x, y2>>3);
+      oledWriteDataBlock(&bNew, 1);        
+    }
+  } // y major case
+} /* oledDrawLine() */
+
 void setup() {
   // put your setup code here, to run once:
   delay(50); // wait for the OLED to fully power up
@@ -1126,20 +1252,36 @@ char szTemp[32];
    oledFill(0);
    oledWriteString(0,0,"About to run",0,0);
    oledWriteString(0,1,"OLED Perf test",0,0);
-   oledWriteString(0,2,"1-Erase display",0,0);
-   oledWriteString(0,3,"2-Draw 8x8 chars",0,0);
+   oledWriteString(0,2,"1-Lines",0,0);
+   oledWriteString(0,3,"2-8x8 characters",0,0);
    delay(4000);
-   
+
+   oledFill(0);
    ulTime = millis();
-   for (i=0; i<10; i++)
+   for (i=0; i<127; i+=2)
    {
-       oledFill(0xff);
-       oledFill(0x00);
+      oledDrawLine(i, 0, 127-i, 63);
    }
-   ulTime = millis() - ulTime;
-   iRate = 200000UL / ulTime;
-   sprintf(szTemp, "Rate = %d.%d FPS", iRate/10, iRate % 10);
-   oledWriteString(0,0,szTemp, 0,0);
+   for (i=62; i>=0; i -= 2)
+   {
+      oledDrawLine(0, i, 127, 63-i);
+   }
+   delay(2000);
+   for (j=0; j<4; j++)
+   {
+   oledFill(0);
+   for (i=0; i<=63; i+=2)
+   {
+       oledDrawLine(64-i, 32+(i>>1), 64+i, 32+(i>>1));
+       oledDrawLine(64-i, 32-(i>>1), 64+i, 32-(i>>1));
+       oledDrawLine(64-i, 32-(i>>1), 64-i, 32+(i>>1));
+       oledDrawLine(64+i, 32-(i>>1), 64+i, 32+(i>>1)); 
+   }
+   }
+//   ulTime = millis() - ulTime;
+//   iRate = 960000UL / ulTime;
+//   sprintf(szTemp, "Rate = %d.%d LPS", iRate/10, iRate % 10);
+//   oledWriteString(0,0,szTemp, 0,0);
    delay(4000);
 
    szTemp[16] = 0; // string terminator
