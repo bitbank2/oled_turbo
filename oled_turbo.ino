@@ -683,6 +683,12 @@ static void oledWriteCommand(unsigned char c);
 #define BB_SDA 2
 #define BB_SCL 3
 
+#if  F_CPU > 8000000L
+ #define I2C_CLK_LOW() I2CPORT &= ~(1 << BB_SCL) //compiles to cbi instruction taking 2 clock cycles, extending the clock pulse
+#else
+ #define I2C_CLK_LOW() I2CPORT = bOld //setting a port instruction takes 1 clock cycle
+#endif 
+
 //
 // Transmit a byte and ack bit
 //
@@ -697,13 +703,13 @@ byte bOld = I2CPORT & ~((1 << BB_SDA) | (1 << BB_SCL));
             bOld |= (1 << BB_SDA);
          I2CPORT = bOld;
          I2CPORT |= (1 << BB_SCL);
-         I2CPORT = bOld;
+         I2C_CLK_LOW();
          b <<= 1;
      } // for i
 // ack bit
   I2CPORT = bOld & ~(1 << BB_SDA); // set data low
   I2CPORT |= (1 << BB_SCL); // toggle clock
-  I2CPORT = bOld;
+  I2C_CLK_LOW();
 } /* i2cByteOut() */
 
 void i2cBegin(byte addr)
@@ -732,7 +738,7 @@ byte bOld = I2CPORT & ~((1 << BB_SDA) | (1 << BB_SCL));
          for (i=0; i<8; i++)
          {
             I2CPORT |= (1 << BB_SCL); // just toggle SCL, SDA stays the same
-            I2CPORT = bOld;
+            I2C_CLK_LOW();
          } // for i    
      }
      else // normal byte needs every bit tested
@@ -746,7 +752,7 @@ byte bOld = I2CPORT & ~((1 << BB_SDA) | (1 << BB_SCL));
 
          I2CPORT = bOld;
          I2CPORT |= (1 << BB_SCL);
-         I2CPORT = bOld;
+         I2C_CLK_LOW();
          b <<= 1;
         } // for i
      }
