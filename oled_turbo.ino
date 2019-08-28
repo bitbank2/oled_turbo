@@ -771,7 +771,7 @@ void i2cEnd()
   I2CPORT &= ~(1 << BB_SDA);
   I2CPORT |= (1 << BB_SCL);
   I2CPORT |= (1 << BB_SDA);
-  I2CDDR &= ((1 << BB_SDA) | (1 << BB_SCL)); // let the lines float (tri-state)
+  I2CDDR &= ~((1 << BB_SDA) | (1 << BB_SCL)); // let the lines float (tri-state)
 } /* i2cEnd() */
 
 // Wrapper function to write I2C data on Arduino
